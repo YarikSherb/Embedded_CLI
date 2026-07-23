@@ -29,7 +29,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include "microrl.h"
+#include "../include/microrl/microrl.h"
 #if MICRORL_CFG_USE_LIBC_STDIO
 #include <stdio.h>
 #endif /* MICRORL_CFG_USE_LIBC_STDIO */

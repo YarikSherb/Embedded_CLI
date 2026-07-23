@@ -45,7 +45,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
-#include "microsh.h"
+#include "../include/microsh/microsh.h"
 
 #if MICROSH_CFG_CONSOLE_SESSIONS
 static int     prv_execute_login(microrl_t* mrl, int argc, const char* const *argv);

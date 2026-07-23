@@ -8,6 +8,7 @@
 
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 #include "../microsh/src/include/microsh/microsh.h"
 #include "../hw_driver/hw_driver.h"
@@ -20,17 +21,21 @@
 #define _CMD_HELP                   "help"
 #define _CMD_CLEAR                  "clear"
 #define _CMD_SERNUM                 "sernum"
+#define _CMD_READ_DATA 				"rdm"
+#define _CMD_WRITE_DATA 			"wdm"
 #define _CMD_LOGOUT                 "logout"
 
 /* Arguments for set/clear */
 #define _SCMD_RD                    "?"
 #define _SCMD_SAVE                  "save"
 
-#define _NUM_OF_CMD                 4
+#define _NUM_OF_CMD                 6
 #define _NUM_OF_SETCLEAR_SCMD       2
 
+#define MAX_READ_MEMORY_SIZE 256U
+
 /* Available  commands */
-char* keyword[] = {_CMD_HELP, _CMD_CLEAR, _CMD_SERNUM, _CMD_LOGOUT};
+char* keyword[] = {_CMD_HELP, _CMD_CLEAR, _CMD_SERNUM, _CMD_READ_DATA, _CMD_WRITE_DATA, _CMD_LOGOUT};
 
 /* 'read/save' command argements */
 char* read_save_key[] = {_SCMD_RD, _SCMD_SAVE};
@@ -46,6 +51,8 @@ static void *misc_handler = {0};
 static int help_cmd(microsh_t* msh, int argc, const char* const *argv);
 static int clear_screen_cmd(microsh_t* msh, int argc, const char* const *argv);
 static int sernum_cmd(microsh_t* msh, int argc, const char* const *argv);
+static int read_memory_cmd(microsh_t* msh, int argc, const char* const *argv);
+static int write_memory_cmd(microsh_t* msh, int argc, const char* const *argv);
 #if MICROSH_CFG_CONSOLE_SESSIONS
 static int logout_cmd(microsh_t* msh, int argc, const char* const *argv);
 #endif /* MICROSH_CFG_CONSOLE_SESSIONS */
@@ -84,8 +91,11 @@ microshr_t register_all_commands(microsh_t* msh) {
     result |= microsh_cmd_register(msh, 1, _CMD_HELP,   help_cmd,         NULL);
     result |= microsh_cmd_register(msh, 1, _CMD_CLEAR,  clear_screen_cmd, NULL);
     result |= microsh_cmd_register(msh, 2, _CMD_SERNUM, sernum_cmd,       NULL);
-#if MICROSH_CFG_CONSOLE_SESSIONS
+    result |= microsh_cmd_register(msh, 3, _CMD_READ_DATA, read_memory_cmd,NULL);
+    result |= microsh_cmd_register(msh,3,_CMD_WRITE_DATA,write_memory_cmd,NULL);
+    #if MICROSH_CFG_CONSOLE_SESSIONS
     result |= microsh_cmd_register(msh, 1, _CMD_LOGOUT, logout_cmd,       NULL);
+
 #endif /* MICROSH_CFG_CONSOLE_SESSIONS */
 
     return result;
@@ -241,12 +251,19 @@ int help_cmd(microsh_t* msh, int argc, const char* const *argv) {
         print("Different commands may be available for different sessions."_ENDLINE_SEQ);
     } else {
 #endif /* MICROSH_CFG_CONSOLE_SESSIONS */
-        print("List of commands:"_ENDLINE_SEQ);
-        print("\tclear               - clear screen"_ENDLINE_SEQ);
-        print("\tsernum ?            - read serial number value"_ENDLINE_SEQ);
-        print("\tsernum VALUE        - set serial number value"_ENDLINE_SEQ);
-        print("\tsernum save         - save serial number value to flash"_ENDLINE_SEQ);
-        print("\tlogout              - end an authorized session"_ENDLINE_SEQ);
+    	print("List of commands:" _ENDLINE_SEQ);
+
+    	print("\thelp                - show command list" _ENDLINE_SEQ);
+    	print("\tclear               - clear terminal screen" _ENDLINE_SEQ);
+
+    	print("\tsernum ?            - read serial number value" _ENDLINE_SEQ);
+    	print("\tsernum VALUE        - set serial number value" _ENDLINE_SEQ);
+    	print("\tsernum save         - save serial number value to flash" _ENDLINE_SEQ);
+
+    	print("\trdm ADDRESS LENGTH  - read memory dump" _ENDLINE_SEQ);
+    	print("\twdm ADDRESS VALUE   - write 32-bit value to memory" _ENDLINE_SEQ);
+
+    	print("\tlogout              - end an authorized session" _ENDLINE_SEQ);
 #if MICROSH_CFG_CONSOLE_SESSIONS
     }
 #endif /* MICROSH_CFG_CONSOLE_SESSIONS */
@@ -300,6 +317,123 @@ int sernum_cmd(microsh_t* msh, int argc, const char* const *argv) {
         print("Read or specify serial number"_ENDLINE_SEQ);
         return microshEXEC_ERROR;
     }
+
+    return microshEXEC_OK;
+}
+
+int read_memory_cmd(microsh_t* msh, int argc, const char* const *argv)
+{
+    MICRORL_UNUSED(msh);
+
+    if (argc != 3)
+    {
+        print("Usage: rdm ADDRESS LENGTH" _ENDLINE_SEQ);
+        return microshEXEC_OK;
+    }
+
+
+    uint32_t address = strtoul(argv[1], NULL, 0);
+    uint32_t length  = strtoul(argv[2], NULL, 0);
+
+
+    if (length == 0)
+    {
+        print("Length must be > 0" _ENDLINE_SEQ);
+        return microshEXEC_OK;
+    }
+
+
+    if (length > MAX_READ_MEMORY_SIZE)
+    {
+        print("Length too large" _ENDLINE_SEQ);
+        return microshEXEC_OK;
+    }
+
+
+    volatile uint8_t *ptr = (volatile uint8_t *)address;
+
+
+    char buffer[64];
+
+
+    snprintf(buffer,
+             sizeof(buffer),
+             "Read memory 0x%08lX (%lu bytes)" _ENDLINE_SEQ,
+             address,
+             length);
+
+    print(buffer);
+
+
+    for (uint32_t i = 0; i < length; i++)
+    {
+        if ((i % 16) == 0)
+        {
+            snprintf(buffer,
+                     sizeof(buffer),
+                     "%08lX: ",
+                     address + i);
+
+            print(buffer);
+        }
+
+
+        snprintf(buffer,
+                 sizeof(buffer),
+                 "%02X ",
+                 ptr[i]);
+
+        print(buffer);
+
+
+        if ((i % 16) == 15)
+        {
+            print(_ENDLINE_SEQ);
+        }
+    }
+
+
+    print(_ENDLINE_SEQ);
+
+
+    return microshEXEC_OK;
+}
+
+int write_memory_cmd(microsh_t* msh, int argc, const char* const *argv)
+{
+    MICRORL_UNUSED(msh);
+
+
+    if (argc != 3)
+    {
+        print("Usage: wdm ADDRESS VALUE" _ENDLINE_SEQ);
+        return microshEXEC_OK;
+    }
+
+
+    uint32_t address = strtoul(argv[1], NULL, 0);
+    uint32_t value   = strtoul(argv[2], NULL, 0);
+
+
+    volatile uint32_t *ptr = (volatile uint32_t *)address;
+
+
+    print("Write memory" _ENDLINE_SEQ);
+
+
+    *ptr = value;
+
+
+    char buffer[64];
+
+    snprintf(buffer,
+             sizeof(buffer),
+             "0x%08lX <= 0x%08lX" _ENDLINE_SEQ,
+             address,
+             value);
+
+    print(buffer);
+
 
     return microshEXEC_OK;
 }
