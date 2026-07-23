@@ -9,7 +9,8 @@
 #include <string.h>
 #include <stdlib.h>
 
-#include "microsh.h"
+#include "../microsh/src/include/microsh/microsh.h"
+#include "../hw_driver/hw_driver.h"
 
 #define _STM32_DEMO_VER             "1.0"
 
@@ -40,6 +41,8 @@ char* compl_word[_NUM_OF_CMD + 1];
 /* Variable changeable with commands */
 uint32_t device_sn = 0;
 
+static void *misc_handler = {0};
+
 static int help_cmd(microsh_t* msh, int argc, const char* const *argv);
 static int clear_screen_cmd(microsh_t* msh, int argc, const char* const *argv);
 static int sernum_cmd(microsh_t* msh, int argc, const char* const *argv);
@@ -50,35 +53,10 @@ static int logout_cmd(microsh_t* msh, int argc, const char* const *argv);
 /**
  * \brief           Init STM32F4 platform
  */
-void init(void) {
-//    LL_USART_InitTypeDef USART_InitStruct = {0};
-//    LL_GPIO_InitTypeDef GPIO_InitStruct = {0};
-//
-//    USART_GPIO_ENABLE_CLOCK();
-//    USART_UART_ENABLE_CLOCK();
-//    __DSB();
-//
-//    GPIO_InitStruct.Pin = USART_TX_Pin | USART_RX_Pin;
-//    GPIO_InitStruct.Mode = LL_GPIO_MODE_ALTERNATE;
-//    GPIO_InitStruct.Speed = LL_GPIO_SPEED_FREQ_VERY_HIGH;
-//    GPIO_InitStruct.OutputType = LL_GPIO_OUTPUT_PUSHPULL;
-//    GPIO_InitStruct.Pull = LL_GPIO_PULL_UP;
-//    GPIO_InitStruct.Alternate = USART_GPIO_AF_NUM;
-//    LL_GPIO_Init(USART_GPIO_Port, &GPIO_InitStruct);
-//
-//    USART_InitStruct.BaudRate = 115200;
-//    USART_InitStruct.DataWidth = LL_USART_DATAWIDTH_8B;
-//    USART_InitStruct.StopBits = LL_USART_STOPBITS_1;
-//    USART_InitStruct.Parity = LL_USART_PARITY_NONE;
-//    USART_InitStruct.TransferDirection = LL_USART_DIRECTION_TX_RX;
-//    USART_InitStruct.HardwareFlowControl = LL_USART_HWCONTROL_NONE;
-//    USART_InitStruct.OverSampling = LL_USART_OVERSAMPLING_16;
-//    LL_USART_Init(USART_PERIFH, &USART_InitStruct);
-//
-//    LL_USART_DisableIT_CTS(USART_PERIFH);
-//    LL_USART_ConfigAsyncMode(USART_PERIFH);
-//
-//    LL_USART_Enable(USART_PERIFH);
+void init(void *handler) {
+
+	misc_handler = handler;
+	hw_init(&misc_handler);
 }
 #if MICROSH_CFG_CONSOLE_SESSIONS
 /**
@@ -122,10 +100,10 @@ microshr_t register_all_commands(microsh_t* msh) {
 static int print(const char* str) {
     uint32_t i = 0;
 
-//    while (str[i] != 0) {
-//        while (!LL_USART_IsActiveFlag_TXE(USART_PERIFH)) {}
-//        LL_USART_TransmitData8(USART_PERIFH, str[i++]);
-//    }
+    while (str[i] != 0) {
+        while (!IsActiveFlag_TX(misc_handler)) {}
+    	transmit_data_byte(misc_handler, str[i++]);
+    }
 
     return i;
 }
@@ -147,8 +125,10 @@ int microrl_print(microrl_t* mrl, const char* str) {
  * \return          Input character
  */
 char get_char(void) {
-//    while (!LL_USART_IsActiveFlag_RXNE(USART_PERIFH)) {}
-//    return (char)LL_USART_ReceiveData8(USART_PERIFH);
+
+	while (!IsActiveFlag_RX(misc_handler)){}
+	return recive_data_byte(misc_handler);
+
 }
 
 /**
