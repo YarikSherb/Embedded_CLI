@@ -24,21 +24,32 @@
 #define _CMD_READ_DATA 				"rdm"
 #define _CMD_WRITE_DATA 			"wdm"
 #define _CMD_LOGOUT                 "logout"
+#define _CMD_WRITE_FLASH 			"wrflash"
+#define _CMD_JUMP 					"jump"
 
 /* Arguments for set/clear */
 #define _SCMD_RD                    "?"
-#define _SCMD_SAVE                  "save"
 
 #define _NUM_OF_CMD                 6
 #define _NUM_OF_SETCLEAR_SCMD       2
 
-#define MAX_READ_MEMORY_SIZE 256U
-
+#define MAX_READ_MEMORY_SIZE 		1024 * 256
+#define START_FLASH_MEMORY 			0x08000000U
+#define END_FLASH_MEMORY 			0x08040000U
+#define START_RAM_MEMORY 			0x20000000U
+#define END_RAM_MEMORY 				0x20010000U
 /* Available  commands */
-char* keyword[] = {_CMD_HELP, _CMD_CLEAR, _CMD_SERNUM, _CMD_READ_DATA, _CMD_WRITE_DATA, _CMD_LOGOUT};
+char *keyword[] =
+{ _CMD_HELP,
+_CMD_CLEAR,
+_CMD_SERNUM,
+_CMD_READ_DATA,
+_CMD_WRITE_DATA,
+_CMD_LOGOUT,
+_CMD_WRITE_FLASH };
 
 /* 'read/save' command argements */
-char* read_save_key[] = {_SCMD_RD, _SCMD_SAVE};
+char* read_save_key[] = {_SCMD_RD};
 
 /* Array for comletion */
 char* compl_word[_NUM_OF_CMD + 1];
@@ -53,6 +64,8 @@ static int clear_screen_cmd(microsh_t* msh, int argc, const char* const *argv);
 static int sernum_cmd(microsh_t* msh, int argc, const char* const *argv);
 static int read_memory_cmd(microsh_t* msh, int argc, const char* const *argv);
 static int write_memory_cmd(microsh_t* msh, int argc, const char* const *argv);
+static int write_flash_cmd(microsh_t *msh,int argc, const char *const *argv);
+
 #if MICROSH_CFG_CONSOLE_SESSIONS
 static int logout_cmd(microsh_t* msh, int argc, const char* const *argv);
 #endif /* MICROSH_CFG_CONSOLE_SESSIONS */
@@ -91,8 +104,9 @@ microshr_t register_all_commands(microsh_t* msh) {
     result |= microsh_cmd_register(msh, 1, _CMD_HELP,   help_cmd,         NULL);
     result |= microsh_cmd_register(msh, 1, _CMD_CLEAR,  clear_screen_cmd, NULL);
     result |= microsh_cmd_register(msh, 2, _CMD_SERNUM, sernum_cmd,       NULL);
-    result |= microsh_cmd_register(msh, 3, _CMD_READ_DATA, read_memory_cmd,NULL);
+    result |= microsh_cmd_register(msh, 4, _CMD_READ_DATA, read_memory_cmd,NULL);
     result |= microsh_cmd_register(msh,3,_CMD_WRITE_DATA,write_memory_cmd,NULL);
+    result |= microsh_cmd_register(msh,4,_CMD_WRITE_FLASH,write_flash_cmd,NULL);
     #if MICROSH_CFG_CONSOLE_SESSIONS
     result |= microsh_cmd_register(msh, 1, _CMD_LOGOUT, logout_cmd,       NULL);
 
@@ -218,13 +232,6 @@ static void set_sernum(char* str_val) {
     print("\tS/N not set"_ENDLINE_SEQ);
 }
 
-/**
- * \brief           SERNUM SAVE command callback
- */
-static void save_sernum(void) {
-    /* To simplify the code, no implementation of writing SN to FLASH OTP memory is provided here */
-    print("\tS/N save done"_ENDLINE_SEQ);
-}
 
 /**
  * \brief           HELP command execution
@@ -258,10 +265,10 @@ int help_cmd(microsh_t* msh, int argc, const char* const *argv) {
 
     	print("\tsernum ?            - read serial number value" _ENDLINE_SEQ);
     	print("\tsernum VALUE        - set serial number value" _ENDLINE_SEQ);
-    	print("\tsernum save         - save serial number value to flash" _ENDLINE_SEQ);
 
     	print("\trdm ADDRESS LENGTH  - read memory dump" _ENDLINE_SEQ);
     	print("\twdm ADDRESS VALUE   - write 32-bit value to memory" _ENDLINE_SEQ);
+    	print("\twrflash RAM_ADDR FLASH_ADDR VALUE   - write 3 value to memory" _ENDLINE_SEQ);
 
     	print("\tlogout              - end an authorized session" _ENDLINE_SEQ);
 #if MICROSH_CFG_CONSOLE_SESSIONS
@@ -308,8 +315,6 @@ int sernum_cmd(microsh_t* msh, int argc, const char* const *argv) {
     if (++i < argc) {
         if (strcmp(argv[i], _SCMD_RD) == 0) {
             read_sernum();
-        } else if (strcmp(argv[i], _SCMD_SAVE) == 0) {
-            save_sernum();
         } else {
             set_sernum((char*)argv[i]);
         }
@@ -321,80 +326,150 @@ int sernum_cmd(microsh_t* msh, int argc, const char* const *argv) {
     return microshEXEC_OK;
 }
 
+typedef enum
+{
+    MEM_FMT_U8,
+    MEM_FMT_U16,
+    MEM_FMT_U32
+} mem_format_t;
+
+static void print_memory_line(uint32_t address)
+{
+    char buffer[16];
+
+    snprintf(buffer,
+             sizeof(buffer),
+             "\r\n%08lX: ",
+             (unsigned long)address);
+
+    print(buffer);
+}
+
+static void print_memory_value(uint32_t value, mem_format_t format)
+{
+    char buffer[16];
+
+    switch (format)
+    {
+        case MEM_FMT_U8:
+            snprintf(buffer, sizeof(buffer), "%02X ", (uint8_t)value);
+            break;
+
+        case MEM_FMT_U16:
+            snprintf(buffer, sizeof(buffer), "%04X ", (uint16_t)value);
+            break;
+
+        case MEM_FMT_U32:
+            snprintf(buffer, sizeof(buffer), "%08lX ", (unsigned long)value);
+            break;
+    }
+
+    print(buffer);
+}
+
 int read_memory_cmd(microsh_t* msh, int argc, const char* const *argv)
 {
     MICRORL_UNUSED(msh);
 
-    if (argc != 3)
+    mem_format_t format = MEM_FMT_U8;
+
+    if ((argc != 3) && (argc != 4))
     {
-        print("Usage: rdm ADDRESS LENGTH" _ENDLINE_SEQ);
+        print("Usage: rdm ADDRESS LENGTH [u8|u16|u32]" _ENDLINE_SEQ);
         return microshEXEC_OK;
     }
-
 
     uint32_t address = strtoul(argv[1], NULL, 0);
     uint32_t length  = strtoul(argv[2], NULL, 0);
 
-
-    if (length == 0)
+    if (argc == 4)
     {
-        print("Length must be > 0" _ENDLINE_SEQ);
+        if (!strcmp(argv[3], "u8"))
+            format = MEM_FMT_U8;
+        else if (!strcmp(argv[3], "u16"))
+            format = MEM_FMT_U16;
+        else if (!strcmp(argv[3], "u32"))
+            format = MEM_FMT_U32;
+        else
+        {
+            print("Unknown format. Use u8/u16/u32" _ENDLINE_SEQ);
+            return microshEXEC_OK;
+        }
+    }
+
+    if ((length == 0U) || (length > MAX_READ_MEMORY_SIZE))
+    {
+        print("Invalid length" _ENDLINE_SEQ);
         return microshEXEC_OK;
     }
 
+    uint32_t element_size;
+    uint32_t elements_per_line;
 
-    if (length > MAX_READ_MEMORY_SIZE)
+    switch (format)
     {
-        print("Length too large" _ENDLINE_SEQ);
-        return microshEXEC_OK;
+        case MEM_FMT_U8:
+            element_size = 1;
+            elements_per_line = 16;
+            break;
+
+        case MEM_FMT_U16:
+            if (address & 1U)
+            {
+                print("Address must be 2-byte aligned" _ENDLINE_SEQ);
+                return microshEXEC_OK;
+            }
+            element_size = 2;
+            elements_per_line = 8;
+            break;
+
+        default:
+            if (address & 3U)
+            {
+                print("Address must be 4-byte aligned" _ENDLINE_SEQ);
+                return microshEXEC_OK;
+            }
+            element_size = 4;
+            elements_per_line = 4;
+            break;
     }
-
-
-    volatile uint8_t *ptr = (volatile uint8_t *)address;
-
 
     char buffer[64];
 
-
     snprintf(buffer,
              sizeof(buffer),
-             "Read memory 0x%08lX (%lu bytes)" _ENDLINE_SEQ,
-             address,
-             length);
+             "Read memory 0x%08lX (%lu bytes)",
+             (unsigned long)address,
+             (unsigned long)length);
 
     print(buffer);
 
+    uint32_t count = length / element_size;
 
-    for (uint32_t i = 0; i < length; i++)
+    for (uint32_t i = 0; i < count; i++)
     {
-        if ((i % 16) == 0)
+        if ((i % elements_per_line) == 0U)
         {
-            snprintf(buffer,
-                     sizeof(buffer),
-                     "%08lX: ",
-                     address + i);
-
-            print(buffer);
+            print_memory_line(address + i * element_size);
         }
 
-
-        snprintf(buffer,
-                 sizeof(buffer),
-                 "%02X ",
-                 ptr[i]);
-
-        print(buffer);
-
-
-        if ((i % 16) == 15)
+        switch (format)
         {
-            print(_ENDLINE_SEQ);
+            case MEM_FMT_U8:
+                print_memory_value(((volatile const uint8_t *)address)[i], format);
+                break;
+
+            case MEM_FMT_U16:
+                print_memory_value(((volatile const uint16_t *)address)[i], format);
+                break;
+
+            case MEM_FMT_U32:
+                print_memory_value(((volatile const uint32_t *)address)[i], format);
+                break;
         }
     }
 
-
     print(_ENDLINE_SEQ);
-
 
     return microshEXEC_OK;
 }
@@ -434,6 +509,68 @@ int write_memory_cmd(microsh_t* msh, int argc, const char* const *argv)
 
     print(buffer);
 
+
+    return microshEXEC_OK;
+}
+
+int write_flash_cmd(microsh_t *msh,
+                    int argc,
+                    const char *const *argv)
+{
+    MICRORL_UNUSED(msh);
+
+    if (argc != 4)
+    {
+        print("Usage: wrflash RAM_ADDR FLASH_ADDR SIZE" _ENDLINE_SEQ);
+        return microshEXEC_OK;
+    }
+
+    uint32_t ram_addr   = strtoul(argv[1], NULL, 0);
+    uint32_t flash_addr = strtoul(argv[2], NULL, 0);
+    uint32_t size       = strtoul(argv[3], NULL, 0);
+
+    if (size == 0U)
+    {
+        print("Invalid size" _ENDLINE_SEQ);
+        return microshEXEC_OK;
+    }
+
+    /* Проверка выравнивания */
+    if ((ram_addr & 0x3U) || (flash_addr & 0x3U) || (size & 0x3U))
+    {
+        print("Address and size must be 4-byte aligned" _ENDLINE_SEQ);
+        return microshEXEC_OK;
+    }
+
+    /* Проверка диапазона RAM */
+    if ((ram_addr < START_RAM_MEMORY) ||
+        ((ram_addr + size) > END_RAM_MEMORY))
+    {
+        print("RAM address out of range" _ENDLINE_SEQ);
+        return microshEXEC_OK;
+    }
+
+    /* Проверка диапазона Flash */
+    if ((flash_addr < START_FLASH_MEMORY) ||
+        ((flash_addr + size) > END_FLASH_MEMORY))   /* STM32F401RC = 256 KB */
+    {
+        print("Flash address out of range" _ENDLINE_SEQ);
+        return microshEXEC_OK;
+    }
+
+    unsigned int status =
+        Flash_WriteBuffer(flash_addr,
+                          (const void *)ram_addr,
+                          size);
+
+    if (status == 0)
+    {
+        print("Write OK" _ENDLINE_SEQ);
+    }
+    else
+    {
+        print("Write FAILED" _ENDLINE_SEQ);
+    }
 
     return microshEXEC_OK;
 }

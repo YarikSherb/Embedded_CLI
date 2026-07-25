@@ -18,4 +18,8 @@ char recive_data_byte(void *handler);
 
 char IsActiveFlag_RX(void *handler);
 
+unsigned int Flash_WriteBuffer(unsigned int flash_addr,
+                                    const void *ram_addr,
+									unsigned int size);
+
 #endif /* HW_DRIVER_HW_DRIVER_H_ */
