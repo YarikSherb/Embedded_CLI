@@ -11,7 +11,6 @@
 #include <stdio.h>
 
 #include "../microsh/src/include/microsh/microsh.h"
-#include "../hw_driver/hw_driver.h"
 
 #define _STM32_DEMO_VER             "1.0"
 
@@ -33,11 +32,21 @@
 #define _NUM_OF_CMD                 6
 #define _NUM_OF_SETCLEAR_SCMD       2
 
+#ifndef MAX_READ_MEMORY_SIZE
 #define MAX_READ_MEMORY_SIZE 		1024 * 256
+#endif
+#ifndef END_FLASH_MEMORY
 #define START_FLASH_MEMORY 			0x08000000U
+#endif
+#ifndef END_FLASH_MEMORY
 #define END_FLASH_MEMORY 			0x08040000U
+#endif
+#ifndef START_RAM_MEMORY
 #define START_RAM_MEMORY 			0x20000000U
+#endif
+#ifndef END_RAM_MEMORY
 #define END_RAM_MEMORY 				0x20010000U
+#endif
 /* Available  commands */
 char *keyword[] =
 { _CMD_HELP,
@@ -57,8 +66,6 @@ char* compl_word[_NUM_OF_CMD + 1];
 /* Variable changeable with commands */
 uint32_t device_sn = 0;
 
-static void *misc_handler = {0};
-
 static int help_cmd(microsh_t* msh, int argc, const char* const *argv);
 static int clear_screen_cmd(microsh_t* msh, int argc, const char* const *argv);
 static int sernum_cmd(microsh_t* msh, int argc, const char* const *argv);
@@ -70,14 +77,6 @@ static int write_flash_cmd(microsh_t *msh,int argc, const char *const *argv);
 static int logout_cmd(microsh_t* msh, int argc, const char* const *argv);
 #endif /* MICROSH_CFG_CONSOLE_SESSIONS */
 
-/**
- * \brief           Init STM32F4 platform
- */
-void init(void *handler) {
-
-	misc_handler = handler;
-	hw_init(&misc_handler);
-}
 #if MICROSH_CFG_CONSOLE_SESSIONS
 /**
  * \brief           Register commands that may be used in authorization process
@@ -121,15 +120,24 @@ microshr_t register_all_commands(microsh_t* msh) {
  * \return          The number of characters that would have been written,
  *                      not counting the terminating null character.
  */
-static int print(const char* str) {
-    uint32_t i = 0;
+__attribute__((weak)) int print(const char* str) {
+	return 0;
+}
 
-    while (str[i] != 0) {
-        while (!IsActiveFlag_TX(misc_handler)) {}
-    	transmit_data_byte(misc_handler, str[i++]);
-    }
+/**
+ * \brief           Get char user pressed
+ * \return          Input character
+ */
+__attribute__((weak)) char get_char(void) {
 
-    return i;
+	return 0;
+
+}
+
+__attribute__((weak)) unsigned int Flash_WriteBuffer(unsigned int flash_addr, const void *ram_addr, unsigned int size){
+
+	return 0;
+
 }
 
 /**
@@ -142,17 +150,6 @@ static int print(const char* str) {
 int microrl_print(microrl_t* mrl, const char* str) {
     MICROSH_UNUSED(mrl);
     return print(str);
-}
-
-/**
- * \brief           Get char user pressed
- * \return          Input character
- */
-char get_char(void) {
-
-	while (!IsActiveFlag_RX(misc_handler)){}
-	return recive_data_byte(misc_handler);
-
 }
 
 /**

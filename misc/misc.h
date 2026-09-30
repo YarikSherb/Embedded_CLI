@@ -20,7 +20,6 @@ enum {
 };
 #endif /* MICROSH_CFG_CONSOLE_SESSIONS */
 
-void       init(void *handler);
 #if MICROSH_CFG_CONSOLE_SESSIONS
 microshr_t register_auth_commands(microsh_t* msh);
 #endif /* MICROSH_CFG_CONSOLE_SESSIONS */

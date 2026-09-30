@@ -30,7 +30,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "microsh_config.h"
-#include "microrl.h"
+#include "../../../../microrol/src/include/microrl/microrl.h"
 
 #ifdef __cplusplus
 extern "C" {
