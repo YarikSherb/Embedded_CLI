@@ -35,18 +35,6 @@
 #ifndef MAX_READ_MEMORY_SIZE
 #define MAX_READ_MEMORY_SIZE 		1024 * 256
 #endif
-#ifndef END_FLASH_MEMORY
-#define START_FLASH_MEMORY 			0x08000000U
-#endif
-#ifndef END_FLASH_MEMORY
-#define END_FLASH_MEMORY 			0x08040000U
-#endif
-#ifndef START_RAM_MEMORY
-#define START_RAM_MEMORY 			0x20000000U
-#endif
-#ifndef END_RAM_MEMORY
-#define END_RAM_MEMORY 				0x20010000U
-#endif
 /* Available  commands */
 char *keyword[] =
 { _CMD_HELP,
@@ -125,18 +113,15 @@ __attribute__((weak)) int print(const char* str) {
 }
 
 /**
- * \brief           Get char user pressed
- * \return          Input character
+ * \brief           Write memory from RAM to FLASH
+ * \param[in]       str: адрес флэш памяти мк, адрес оперативной памяти, размер
+ * \return          OK - 0; не ОК - не ноль
+ *
  */
-__attribute__((weak)) char get_char(void) {
-
-	return 0;
-
-}
 
 __attribute__((weak)) unsigned int Flash_WriteBuffer(unsigned int flash_addr, const void *ram_addr, unsigned int size){
 
-	return 0;
+	return 1;
 
 }
 
@@ -536,22 +521,6 @@ int write_flash_cmd(microsh_t *msh,
     if ((ram_addr & 0x3U) || (flash_addr & 0x3U) || (size & 0x3U))
     {
         print("Address and size must be 4-byte aligned" _ENDLINE_SEQ);
-        return microshEXEC_OK;
-    }
-
-    /* Проверка диапазона RAM */
-    if ((ram_addr < START_RAM_MEMORY) ||
-        ((ram_addr + size) > END_RAM_MEMORY))
-    {
-        print("RAM address out of range" _ENDLINE_SEQ);
-        return microshEXEC_OK;
-    }
-
-    /* Проверка диапазона Flash */
-    if ((flash_addr < START_FLASH_MEMORY) ||
-        ((flash_addr + size) > END_FLASH_MEMORY))   /* STM32F401RC = 256 KB */
-    {
-        print("Flash address out of range" _ENDLINE_SEQ);
         return microshEXEC_OK;
     }
 
